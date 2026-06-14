@@ -119,6 +119,105 @@ app.delete('/api/delete', (req, res) => {
   }
 });
 
+// Storage Management Helpers
+function getStorageInfo() {
+  let totalSizeBytes = 0;
+  const filesList = [];
+  const limitBytes = 100 * 1024 * 1024; // 100MB limit
+
+  FOLDERS.forEach((folder) => {
+    const dirPath = path.join(UPLOADS_DIR, folder);
+    if (fs.existsSync(dirPath)) {
+      const files = fs.readdirSync(dirPath);
+      files.forEach((file) => {
+        const filePath = path.join(dirPath, file);
+        try {
+          const stats = fs.statSync(filePath);
+          if (stats.isFile()) {
+            totalSizeBytes += stats.size;
+            filesList.push({
+              name: file,
+              folder: folder,
+              size: stats.size, // in bytes
+              url: `http://localhost:${PORT}/uploads/${folder}/${file}`,
+              createdAt: stats.birthtime || stats.mtime
+            });
+          }
+        } catch (err) {
+          console.error(`Error reading file ${filePath}:`, err);
+        }
+      });
+    }
+  });
+
+  return {
+    totalSize: totalSizeBytes,
+    totalSizeMB: Number((totalSizeBytes / (1024 * 1024)).toFixed(2)),
+    limit: limitBytes,
+    limitMB: 100,
+    isFull: totalSizeBytes >= limitBytes,
+    files: filesList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  };
+}
+
+// Get storage usage & files list
+app.get('/api/storage', (req, res) => {
+  try {
+    const info = getStorageInfo();
+    res.json({ success: true, storage: info });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk Delete files from storage
+app.post('/api/storage/delete-bulk', (req, res) => {
+  const { urls } = req.body;
+  if (!urls || !Array.isArray(urls)) {
+    return res.status(400).json({ error: 'Array of file URLs is required in "urls" field' });
+  }
+
+  const deleted = [];
+  const errors = [];
+
+  urls.forEach((url) => {
+    try {
+      const marker = '/uploads/';
+      const markerIndex = url.indexOf(marker);
+      if (markerIndex === -1) {
+        errors.push({ url, error: 'Invalid URL pattern' });
+        return;
+      }
+
+      const relativePath = url.substring(markerIndex + marker.length); // e.g. documents/filename
+      const absolutePath = path.join(UPLOADS_DIR, relativePath);
+
+      // Security check: ensure path is inside UPLOADS_DIR to prevent traversal
+      if (!absolutePath.startsWith(UPLOADS_DIR)) {
+        errors.push({ url, error: 'Access denied' });
+        return;
+      }
+
+      if (fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
+        deleted.push(url);
+      } else {
+        errors.push({ url, error: 'File not found' });
+      }
+    } catch (err) {
+      errors.push({ url, error: err.message });
+    }
+  });
+
+  const updatedInfo = getStorageInfo();
+  res.json({
+    success: true,
+    deleted,
+    errors,
+    storage: updatedInfo
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', serverTime: new Date() });
