@@ -123,7 +123,7 @@ app.delete('/api/delete', (req, res) => {
 function getStorageInfo() {
   let totalSizeBytes = 0;
   const filesList = [];
-  const limitBytes = 100 * 1024 * 1024; // 100MB limit
+  const limitBytes = 5 * 1024 * 1024 * 1024; // 5GB limit
 
   FOLDERS.forEach((folder) => {
     const dirPath = path.join(UPLOADS_DIR, folder);
@@ -154,7 +154,7 @@ function getStorageInfo() {
     totalSize: totalSizeBytes,
     totalSizeMB: Number((totalSizeBytes / (1024 * 1024)).toFixed(2)),
     limit: limitBytes,
-    limitMB: 100,
+    limitMB: 5120, // 5GB limit in MB
     isFull: totalSizeBytes >= limitBytes,
     files: filesList.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
   };
